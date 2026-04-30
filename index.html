@@ -223,6 +223,14 @@ input::placeholder{color:#bbb;}
   <div class="loading-sub">Lecture des signaux de votre profil LinkedIn</div>
 </div>
 
+<!-- SECTION CONFIRMATION -->
+<div id="confirmSection" style="display:none;min-height:calc(100vh - 48px);align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:32px;">
+  <div style="font-size:48px;">📬</div>
+  <h2 style="margin:0;font-size:24px;">Votre diagnostic est en cours de préparation</h2>
+  <p style="color:#666;max-width:420px;line-height:1.6;margin:0;">Nous analysons votre profil LinkedIn. Vous recevrez votre diagnostic complet dans votre boîte email dans quelques minutes.</p>
+  <p id="confirmEmail" style="font-weight:600;color:#5b3fdf;margin:0;"></p>
+</div>
+
 <!-- SECTION RÉSULTATS -->
 <div id="resultsSection" style="display:none;">
   <div class="res-topbar">
@@ -382,7 +390,7 @@ function renderResults(a, email, linkedin_url) {
   window.scrollTo(0, 0);
 
   // Emails
-  sendEmails(a, email, linkedin_url);
+  //sendEmails(a, email, linkedin_url);
 }
 
 function buildEmailHTML(a) {
@@ -435,6 +443,34 @@ async function sendEmails(a, email, linkedin_url) {
   }
 }
 
+async function pollResult(jobId, email, linkedin_url) {
+  const INTERVAL = 3000;
+  const TIMEOUT = 5 * 60 * 1000; // 5 min max
+  const start = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      if (Date.now() - start > TIMEOUT) {
+        reject(new Error('Délai dépassé, veuillez réessayer.'));
+        return;
+      }
+      try {
+        const r = await fetch(`/.netlify/functions/status?id=${jobId}`);
+        const data = await r.json();
+        if (data.ready) {
+          renderResults(data.analysis, email, linkedin_url);
+          resolve();
+        } else {
+          setTimeout(tick, INTERVAL);
+        }
+      } catch(e) {
+        setTimeout(tick, INTERVAL);
+      }
+    };
+    setTimeout(tick, INTERVAL);
+  });
+}
+
 async function handleSubmit() {
   const email = document.getElementById('emailInput').value.trim();
   const url = document.getElementById('urlInput').value.trim();
@@ -447,17 +483,17 @@ async function handleSubmit() {
   document.getElementById('loadingSection').style.display = 'flex';
 
   try {
-    const resp = await fetch('/.netlify/functions/analyze', {
+    const jobId = crypto.randomUUID();
+
+    const resp = await fetch('/.netlify/functions/analyze-background', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ linkedin_url: url, email })
+      body: JSON.stringify({ linkedin_url: url, email, jobId })
     });
 
-    const data = await resp.json();
+    if (resp.status !== 202) throw new Error(`Erreur serveur (${resp.status})`);
 
-    if (!data.success) throw new Error(data.error || 'Erreur inconnue');
-
-    renderResults(data.analysis, email, url);
+    await pollResult(jobId, email, url);
 
   } catch(err) {
     document.getElementById('loadingSection').style.display = 'none';
