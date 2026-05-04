@@ -7,7 +7,6 @@ exports.handler = async (event) => {
     const { linkedin_url, email, jobId } = JSON.parse(event.body);
     if (!jobId) throw new Error('Missing jobId');
 
-    // 1. RapidAPI scrape
     const rapidResp = await fetch(
       `https://fresh-linkedin-profile-data.p.rapidapi.com/enrich-lead?linkedin_url=${encodeURIComponent(linkedin_url)}&include_skills=false&include_certifications=false&include_profile_status=false&include_company_public_url=false`,
       {
@@ -36,7 +35,6 @@ exports.handler = async (event) => {
       `About: ${(p.about || '').replace(/[\n\r\t]/g, ' ').substring(0, 1500)}`
     ].join('\n');
 
-    // 2. Claude analyse
     const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -49,12 +47,22 @@ exports.handler = async (event) => {
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `Tu es un expert en personal branding LinkedIn. Analyse ce profil en mode recherche emploi avec un ton direct, bienveillant et vouvoiement détendu. Reponds UNIQUEMENT avec un JSON brut valide, sans backticks ni markdown.
+          content: `Tu es un expert en personal branding LinkedIn et en lecture de signaux implicites. Tu analyses les profils comme un recruteur senior qui scanne en 8 secondes — mais aussi comme un stratège qui lit entre les lignes.
+
+Analyse ce profil LinkedIn en mode recherche d'emploi avec un ton direct, bienveillant, vouvoiement détendu. Reponds UNIQUEMENT avec un JSON brut valide, sans backticks ni markdown.
+
+RÈGLES ABSOLUES pour les personas :
+- P1 et P2 sont toujours des personas "voulu" — des interlocuteurs que le profil attire intentionnellement
+- Les chasseurs de têtes et recruteurs exec sont TOUJOURS classés en P1 ou P2 (jamais ailleurs) — ce sont les interlocuteurs naturels d'un candidat en recherche
+- P3 est un persona "peu_pertinent" — quelqu'un que le profil attire involontairement et qui n'a aucune valeur pour la recherche d'emploi (ex: pair du secteur, consultant, étudiant, curieux)
+- P4 est un persona "possible" — un décideur ou recruteur réel que le profil POURRAIT attirer mais ne cible pas encore. Ce doit être une VRAIE PERSONNE avec un poste concret (ex: "DG d'une PME industrielle", "Head of HR chez un fonds PE"). JAMAIS l'algorithme LinkedIn, jamais un concept abstrait, jamais un outil
+- Ne jamais mentionner "Open to Work", "disponibilité", "mode recherche active" dans les analyses — parle uniquement de ce que le profil communique ou ne communique pas sur la valeur professionnelle
+- Pour le "premier diagnostic", parle de ce que le profil fait ou ne fait pas pour convaincre un recruteur — pas de ce qu'il "signale" en termes de recherche
 
 Profil LinkedIn:
 ${profileText}
 
-JSON à remplir (TOUS les champs, analyses précises et concrètes):
+JSON à remplir (TOUS les champs, analyses précises et concrètes, jamais de champs vides):
 {"nom":"","titre":"","entreprise":"","localisation":"","intro":"","p1_nom":"","p1_qui":"","p1_percoit":"","p1_verdict":"","p2_nom":"","p2_qui":"","p2_percoit":"","p2_verdict":"","p3_nom":"","p3_qui":"","p3_percoit":"","p3_verdict":"","p4_nom":"","p4_qui":"","p4_blocage":"","p4_verdict":"","algo_kw1":"","algo_text1":"","algo_kw2":"","algo_text2":"","algo_kw3":"","algo_text3":"","algo_kw4":"","algo_text4":"","algo_note":"","titre_citation":"","titre_analyse":"","titre_chip":"","about_citation":"","about_analyse":"","about_chip1":"","about_chip2":"","exp_analyse":"","posts_analyse":"","banniere_analyse":"","reco1":"","reco2":"","reco3":"","reco4":"","diag_positif_1":"","diag_positif_2":"","diag_positif_3":"","diag_negatif_1":"","diag_negatif_2":"","diag_negatif_3":""}`
         }]
       })
@@ -67,7 +75,6 @@ JSON à remplir (TOUS les champs, analyses précises et concrètes):
 
     const a = JSON.parse(raw);
 
-    // 3. Envoi emails via Resend
     await Promise.all([
       sendResend(email, a, linkedin_url),
       sendNotification(email, a, linkedin_url)
@@ -124,20 +131,28 @@ function buildEmailHtml(a, linkedin_url) {
   const CORAL_TEXT = '#712B13';
   const GRIS = '#6b6b6b';
   const BLANC = '#f8f6f1';
+  const GRAY_BG = '#F1EFE8';
+  const GRAY_TEXT = '#444441';
 
   const badge = (type) => {
     const map = {
-      voulu: { bg: TEAL_BG, color: TEAL_TEXT, label: 'Voulu' },
-      parasite: { bg: CORAL_BG, color: CORAL_TEXT, label: 'Parasite' },
-      possible: { bg: '#F1EFE8', color: '#444441', label: 'Possible · à valider' }
+      voulu:         { bg: TEAL_BG,  color: TEAL_TEXT,  label: 'Voulu' },
+      peu_pertinent: { bg: CORAL_BG, color: CORAL_TEXT, label: 'Peu pertinent' },
+      possible:      { bg: GRAY_BG,  color: GRAY_TEXT,  label: 'Possible · à valider' }
     };
     const b = map[type] || map.voulu;
     return `<span style="display:inline-block;font-size:10px;font-weight:500;padding:2px 9px;border-radius:20px;background:${b.bg};color:${b.color};letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px;">${b.label}</span>`;
   };
 
-  const personaCard = (type, nom, qui, percoit, verdict, borderColor) => `
+  const borderColor = (type) => ({
+    voulu: TEAL,
+    peu_pertinent: CORAL,
+    possible: '#B4B2A9'
+  }[type] || TEAL);
+
+  const personaCard = (type, nom, qui, percoit, verdict) => `
     <td width="25%" style="padding:6px;vertical-align:top;">
-      <div style="border:.5px solid #e8e4dc;border-radius:8px;padding:14px;height:100%;border-top:3px solid ${borderColor};">
+      <div style="border:.5px solid #e8e4dc;border-radius:8px;padding:14px;border-top:3px solid ${borderColor(type)};">
         ${badge(type)}
         <div style="font-size:13px;font-weight:500;color:#0f0f0f;margin-bottom:8px;">${nom}</div>
         <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Qui</div>
@@ -151,18 +166,14 @@ function buildEmailHtml(a, linkedin_url) {
   const algoItem = (kw, text, isGreen) => kw ? `
     <tr>
       <td style="padding:6px 0;border-bottom:.5px solid #e8e4dc;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isGreen ? TEAL : CORAL};margin-right:8px;vertical-align:middle;"></span>
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${isGreen ? TEAL : CORAL};margin-right:8px;vertical-align:middle;"></span>
         <strong style="color:#0f0f0f;font-size:12px;">${kw}</strong>
         <span style="font-size:12px;color:${GRIS};"> — ${text}</span>
       </td>
     </tr>` : '';
 
-  const diagItem = (text, color) => text ? `
-    <tr>
-      <td style="padding:4px 0 4px 12px;border-left:2px solid ${color};margin-bottom:6px;">
-        <div style="font-size:12.5px;color:${color === TEAL ? '#0F6E56' : '#993C1D'};line-height:1.55;">${text}</div>
-      </td>
-    </tr>` : '';
+  const diagItem = (text, color, textColor) => text ? `
+    <div style="font-size:12.5px;color:${textColor};line-height:1.55;padding:4px 0 4px 12px;border-left:2px solid ${color};margin-bottom:6px;">${text}</div>` : '';
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -185,14 +196,10 @@ function buildEmailHtml(a, linkedin_url) {
   <!-- DISCLAIMER -->
   <tr>
     <td style="padding:16px 32px 0;">
-      <table width="100%" cellspacing="0" cellpadding="0">
-        <tr>
-          <td style="background:#fff;border:1px solid #e8e4dc;border-left:4px solid ${OR};border-radius:0 6px 6px 0;padding:12px 16px;">
-            <div style="font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:${OR};margin-bottom:5px;">Première analyse — Générée par l'IA</div>
-            <div style="font-size:12.5px;color:${GRIS};line-height:1.7;">Ce diagnostic est produit automatiquement à partir des informations <strong style="color:#0f0f0f;">visibles publiquement</strong> sur votre profil LinkedIn. Pour qu'il soit complet et ancré dans votre réalité, un échange de 15 minutes avec Laurent suffit.</div>
-          </td>
-        </tr>
-      </table>
+      <div style="background:#fff;border:1px solid #e8e4dc;border-left:4px solid ${OR};border-radius:0 6px 6px 0;padding:12px 16px;">
+        <div style="font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:${OR};margin-bottom:5px;">Première analyse — Générée par l'IA</div>
+        <div style="font-size:12.5px;color:${GRIS};line-height:1.7;">Ce diagnostic est produit automatiquement à partir des informations <strong style="color:#0f0f0f;">visibles publiquement</strong> sur votre profil LinkedIn. Pour qu'il soit complet et ancré dans votre réalité, un échange de 15 minutes avec Laurent suffit.</div>
+      </div>
     </td>
   </tr>
 
@@ -212,25 +219,27 @@ function buildEmailHtml(a, linkedin_url) {
       <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:${GRIS};margin-bottom:16px;font-weight:500;">Bloc 1 — Personas attirés par votre profil</div>
       <table width="100%" cellspacing="0" cellpadding="0">
         <tr>
-          ${personaCard('voulu', a.p1_nom||'', a.p1_qui||'', a.p1_percoit||'', a.p1_verdict||'', TEAL)}
-          ${personaCard('voulu', a.p2_nom||'', a.p2_qui||'', a.p2_percoit||'', a.p2_verdict||'', TEAL)}
-          ${personaCard('parasite', a.p3_nom||'', a.p3_qui||'', a.p3_percoit||'', a.p3_verdict||'', CORAL)}
-          ${personaCard('possible', a.p4_nom||'', a.p4_qui||'', a.p4_blocage||'', a.p4_verdict||'', '#B4B2A9')}
+          ${personaCard('voulu',         a.p1_nom||'', a.p1_qui||'', a.p1_percoit||'', a.p1_verdict||'')}
+          ${personaCard('voulu',         a.p2_nom||'', a.p2_qui||'', a.p2_percoit||'', a.p2_verdict||'')}
+          ${personaCard('peu_pertinent', a.p3_nom||'', a.p3_qui||'', a.p3_percoit||'', a.p3_verdict||'')}
+          ${personaCard('possible',      a.p4_nom||'', a.p4_qui||'', a.p4_blocage||'', a.p4_verdict||'')}
         </tr>
       </table>
 
       <!-- ALGO -->
-      <table width="100%" cellspacing="0" cellpadding="0" style="margin-top:16px;background:${BLANC};border-radius:6px;padding:14px 16px;">
-        <tr><td>
-          <div style="font-size:11px;font-weight:500;color:#0f0f0f;margin-bottom:10px;">Visibilité algorithmique — ce que LinkedIn fait (et ne fait pas) pour vous</div>
-          <table width="100%" cellspacing="0" cellpadding="0">
-            ${algoItem(a.algo_kw1, a.algo_text1, true)}
-            ${algoItem(a.algo_kw2, a.algo_text2, true)}
-            ${algoItem(a.algo_kw3, a.algo_text3, false)}
-            ${algoItem(a.algo_kw4, a.algo_text4, false)}
-          </table>
-          ${a.algo_note ? `<div style="margin-top:10px;padding-top:10px;border-top:.5px solid #e8e4dc;font-size:12px;color:${GRIS};line-height:1.65;">${a.algo_note}</div>` : ''}
-        </td></tr>
+      <table width="100%" cellspacing="0" cellpadding="0" style="margin-top:16px;">
+        <tr>
+          <td style="background:${BLANC};border-radius:6px;padding:14px 16px;">
+            <div style="font-size:11px;font-weight:500;color:#0f0f0f;margin-bottom:10px;">Visibilité algorithmique — ce que LinkedIn fait (et ne fait pas) pour vous</div>
+            <table width="100%" cellspacing="0" cellpadding="0">
+              ${algoItem(a.algo_kw1, a.algo_text1, true)}
+              ${algoItem(a.algo_kw2, a.algo_text2, true)}
+              ${algoItem(a.algo_kw3, a.algo_text3, false)}
+              ${algoItem(a.algo_kw4, a.algo_text4, false)}
+            </table>
+            ${a.algo_note ? `<div style="margin-top:10px;padding-top:10px;border-top:.5px solid #e8e4dc;font-size:12px;color:${GRIS};line-height:1.65;">${a.algo_note}</div>` : ''}
+          </td>
+        </tr>
       </table>
     </td>
   </tr>
@@ -244,21 +253,17 @@ function buildEmailHtml(a, linkedin_url) {
           <td width="50%" style="padding-right:10px;vertical-align:top;">
             <div style="background:${TEAL_BG};border-radius:6px;padding:14px 16px;">
               <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${TEAL_TEXT};margin-bottom:10px;">Ce que le profil fait</div>
-              <table width="100%" cellspacing="0" cellpadding="0">
-                ${diagItem(a.diag_positif_1, TEAL)}
-                ${diagItem(a.diag_positif_2, TEAL)}
-                ${diagItem(a.diag_positif_3, TEAL)}
-              </table>
+              ${diagItem(a.diag_positif_1, TEAL, '#0F6E56')}
+              ${diagItem(a.diag_positif_2, TEAL, '#0F6E56')}
+              ${diagItem(a.diag_positif_3, TEAL, '#0F6E56')}
             </div>
           </td>
           <td width="50%" style="padding-left:10px;vertical-align:top;">
             <div style="background:${CORAL_BG};border-radius:6px;padding:14px 16px;">
               <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${CORAL_TEXT};margin-bottom:10px;">Ce que le profil ne fait pas</div>
-              <table width="100%" cellspacing="0" cellpadding="0">
-                ${diagItem(a.diag_negatif_1, CORAL)}
-                ${diagItem(a.diag_negatif_2, CORAL)}
-                ${diagItem(a.diag_negatif_3, CORAL)}
-              </table>
+              ${diagItem(a.diag_negatif_1, CORAL, '#993C1D')}
+              ${diagItem(a.diag_negatif_2, CORAL, '#993C1D')}
+              ${diagItem(a.diag_negatif_3, CORAL, '#993C1D')}
             </div>
           </td>
         </tr>
@@ -269,22 +274,16 @@ function buildEmailHtml(a, linkedin_url) {
   <!-- SIGNATURE LAURENT -->
   <tr>
     <td style="background:${BLEU};padding:28px 32px;">
-      <table width="100%" cellspacing="0" cellpadding="0">
-        <tr>
-          <td style="vertical-align:top;">
-            <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-family:Georgia,serif;font-size:15px;color:#fff;text-decoration:none;display:block;margin-bottom:3px;">Laurent Garnier ↗</a>
-            <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-size:11px;color:${OR};opacity:.8;text-decoration:none;display:block;margin-bottom:10px;">linkedin.com/in/laurentgarnier7</a>
-            <div style="font-size:12px;color:rgba(255,255,255,.5);line-height:1.7;max-width:480px;margin-bottom:14px;">Je vous aide à construire un projet solide, à maîtriser l'IA comme levier réel, et à traiter votre recherche comme une campagne — pas comme une attente. Chasseur de têtes pendant 20 ans, je vous donne les codes que les recruteurs ne partagent pas.</div>
-            <a href="https://calendly.com/laurent-sherpact/15-min-sherpact-laurent-garnier" style="display:inline-block;padding:10px 22px;border:1px solid ${OR};color:${OR};font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;border-radius:2px;">Réserver un échange de 15 min →</a>
-          </td>
-        </tr>
-      </table>
+      <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-family:Georgia,serif;font-size:15px;color:#fff;text-decoration:none;display:block;margin-bottom:3px;">Laurent Garnier ↗</a>
+      <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-size:11px;color:${OR};opacity:.8;text-decoration:none;display:block;margin-bottom:10px;">linkedin.com/in/laurentgarnier7</a>
+      <div style="font-size:12px;color:rgba(255,255,255,.5);line-height:1.7;max-width:480px;margin-bottom:16px;">Je vous aide à construire un projet solide, à maîtriser l'IA comme levier réel, et à traiter votre recherche comme une campagne — pas comme une attente. Chasseur de têtes pendant 20 ans, je vous donne les codes que les recruteurs ne partagent pas.</div>
+      <a href="https://calendly.com/laurent-sherpact/15-min-sherpact-laurent-garnier" style="display:inline-block;padding:10px 22px;border:1px solid ${OR};color:${OR};font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;border-radius:2px;">Réserver un échange de 15 min →</a>
     </td>
   </tr>
 
   <!-- RGPD -->
   <tr>
-    <td style="background:#f0ede6;padding:16px 32px;text-align:center;border-top:.5px solid #e8e4dc;">
+    <td style="background:#f0ede6;padding:16px 32px;text-align:center;">
       <p style="font-size:11px;color:#999;line-height:1.8;margin:0;">Vos données sont utilisées uniquement pour produire ce diagnostic. Elles ne sont pas stockées durablement.<br>RGPD — droit d'accès et d'effacement : <a href="mailto:laurent@sherpact.fr" style="color:#888;">laurent@sherpact.fr</a></p>
     </td>
   </tr>
