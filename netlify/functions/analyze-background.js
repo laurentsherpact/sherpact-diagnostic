@@ -67,13 +67,7 @@ JSON à remplir (TOUS les champs, analyses précises et concrètes):
 
     const a = JSON.parse(raw);
 
-    // 3. Stockage du résultat (TTL 1h)
-    // const store = getStore({ name: 'diagnostics', siteID: process.env.SITE_ID, token: process.env.NETLIFY_TOKEN });
-    // await store.set(jobId, JSON.stringify(a), {
-    //   expiration: Math.floor(Date.now() / 1000) + 3600
-    // });
-
-    // 4. Envoi emails via Resend
+    // 3. Envoi emails via Resend
     await Promise.all([
       sendResend(email, a, linkedin_url),
       sendNotification(email, a, linkedin_url)
@@ -102,9 +96,6 @@ async function sendResend(email, a, linkedin_url) {
 }
 
 async function sendNotification(email, a, linkedin_url) {
-  const notifyEmail = 'laurent@sherpact.com';
-  if (!notifyEmail) return;
-
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -113,180 +104,194 @@ async function sendNotification(email, a, linkedin_url) {
     },
     body: JSON.stringify({
       from: process.env.RESEND_FROM || 'Sherpact <diagnostic@sherpact.com>',
-      to: notifyEmail,
+      to: 'laurent@sherpact.com',
       subject: `Nouveau diagnostic — ${email}`,
-      html: `<p><strong>Nouveau diagnostic soumis</strong></p>
-<p>Email : ${email}<br>Profil : <a href="${linkedin_url}">${linkedin_url}</a><br>Date : ${new Date().toLocaleString('fr-FR')}</p>
-<hr style="border:none;border-top:1px solid #e8e4dc;margin:20px 0">
-${buildEmailHtml(a, linkedin_url)}`
+      html: `<p style="font-family:sans-serif;font-size:14px;color:#333;"><strong>Nouveau diagnostic soumis</strong><br>Email : ${email}<br>Profil : <a href="${linkedin_url}">${linkedin_url}</a><br>Date : ${new Date().toLocaleString('fr-FR')}</p><hr style="border:none;border-top:1px solid #e8e4dc;margin:20px 0">${buildEmailHtml(a, linkedin_url)}`
     })
   });
   if (!resp.ok) console.error('Resend notification error:', resp.status, await resp.text());
 }
 
 function buildEmailHtml(a, linkedin_url) {
-  const s = `
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f4f4;margin:0;padding:0}
-    .wrap{max-width:640px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0}
-    .header{background:#1a2840;padding:28px 32px}
-    .header h1{color:#fff;margin:0 0 4px;font-size:20px;font-weight:600}
-    .header p{color:#94a3b8;margin:0;font-size:13px}
-    .intro{padding:24px 32px;background:#f8f9fb;border-bottom:1px solid #e8e8e8;font-size:14px;color:#444;line-height:1.7}
-    .bloc{padding:24px 32px;border-bottom:1px solid #eee}
-    .bloc-title{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#888;font-weight:600;margin:0 0 16px}
-    .persona{background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:14px 16px;margin-bottom:10px}
-    .persona-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
-    .bv{background:#dbeafe;color:#1d4ed8}
-    .bp{background:#fce7f3;color:#be185d}
-    .bs{background:#fef9c3;color:#92400e}
-    .persona-name{font-weight:600;font-size:14px;color:#111;margin-bottom:6px}
-    .persona-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 2px}
-    .persona-val{font-size:13px;color:#333;line-height:1.6}
-    .persona-verdict{font-size:13px;color:#555;font-style:italic;margin-top:8px;padding-top:8px;border-top:1px solid #eee}
-    .algo{background:#f0f4ff;border-radius:6px;padding:14px 16px;margin-top:12px}
-    .algo-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6366f1;font-weight:600;margin-bottom:10px}
-    .algo-item{font-size:13px;color:#333;line-height:1.6;padding:4px 0;border-bottom:1px solid #e0e4f0}
-    .algo-item:last-child{border-bottom:none}
-    .algo-kw{font-weight:600;color:#4f46e5}
-    .algo-note{font-size:12px;color:#6366f1;font-style:italic;margin-top:10px}
-    .sig-item{padding:12px 0;border-bottom:1px solid #f0f0f0}
-    .sig-item:last-child{border-bottom:none}
-    .sig-tag{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#888;font-weight:600;margin-bottom:4px}
-    .sig-quote{font-size:13px;color:#555;font-style:italic;margin-bottom:6px;padding-left:10px;border-left:2px solid #ddd}
-    .sig-read{font-size:13px;color:#333;line-height:1.6}
-    .chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#ede9fe;color:#6d28d9;margin:4px 4px 0 0}
-    .reco-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-    .reco-item{background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:12px}
-    .reco-who{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;margin-bottom:4px;font-weight:600}
-    .reco-text{font-size:13px;color:#333;line-height:1.6}
-    .diag-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
-    .diag-col-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px}
-    .diag-col-left .diag-col-title{color:#16a34a}
-    .diag-col-right .diag-col-title{color:#dc2626}
-    .diag-item{font-size:13px;color:#333;line-height:1.6;padding:4px 0;padding-left:14px;position:relative}
-    .footer{padding:20px 32px;background:#f8f9fb;font-size:12px;color:#aaa;text-align:center}
-    .footer a{color:#1a2840}
-  `;
 
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>${s}</style></head>
-<body><div class="wrap">
+  const BLEU = '#1a2840';
+  const OR = '#b8975a';
+  const TEAL = '#1D9E75';
+  const TEAL_BG = '#E1F5EE';
+  const TEAL_TEXT = '#085041';
+  const CORAL = '#D85A30';
+  const CORAL_BG = '#FAECE7';
+  const CORAL_TEXT = '#712B13';
+  const GRIS = '#6b6b6b';
+  const BLANC = '#f8f6f1';
 
-  <div class="header">
-    <h1>${a.nom || ''}</h1>
-    <p>${a.titre || ''} · ${a.entreprise || ''} · ${a.localisation || ''}</p>
-  </div>
+  const badge = (type) => {
+    const map = {
+      voulu: { bg: TEAL_BG, color: TEAL_TEXT, label: 'Voulu' },
+      parasite: { bg: CORAL_BG, color: CORAL_TEXT, label: 'Parasite' },
+      possible: { bg: '#F1EFE8', color: '#444441', label: 'Possible · à valider' }
+    };
+    const b = map[type] || map.voulu;
+    return `<span style="display:inline-block;font-size:10px;font-weight:500;padding:2px 9px;border-radius:20px;background:${b.bg};color:${b.color};letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px;">${b.label}</span>`;
+  };
 
-  <div class="intro">${a.intro || ''}</div>
+  const personaCard = (type, nom, qui, percoit, verdict, borderColor) => `
+    <td width="25%" style="padding:6px;vertical-align:top;">
+      <div style="border:.5px solid #e8e4dc;border-radius:8px;padding:14px;height:100%;border-top:3px solid ${borderColor};">
+        ${badge(type)}
+        <div style="font-size:13px;font-weight:500;color:#0f0f0f;margin-bottom:8px;">${nom}</div>
+        <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Qui</div>
+        <div style="font-size:12px;color:${GRIS};line-height:1.5;margin-bottom:8px;">${qui}</div>
+        <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Ce qu'il perçoit</div>
+        <div style="font-size:12px;color:${GRIS};line-height:1.5;margin-bottom:8px;">${percoit}</div>
+        <div style="font-size:11.5px;color:${GRIS};font-style:italic;border-top:.5px solid #e8e4dc;padding-top:8px;line-height:1.55;">${verdict}</div>
+      </div>
+    </td>`;
 
-  <!-- BLOC 1 : Personas -->
-  <div class="bloc">
-    <div class="bloc-title">Bloc 1 — Personas attirés par le profil</div>
+  const algoItem = (kw, text, isGreen) => kw ? `
+    <tr>
+      <td style="padding:6px 0;border-bottom:.5px solid #e8e4dc;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isGreen ? TEAL : CORAL};margin-right:8px;vertical-align:middle;"></span>
+        <strong style="color:#0f0f0f;font-size:12px;">${kw}</strong>
+        <span style="font-size:12px;color:${GRIS};"> — ${text}</span>
+      </td>
+    </tr>` : '';
 
-    <div class="persona">
-      <div><span class="persona-badge bv">Voulu</span></div>
-      <div class="persona-name">${a.p1_nom || ''}</div>
-      <div class="persona-label">Qui</div><div class="persona-val">${a.p1_qui || ''}</div>
-      <div class="persona-label">Ce qu'il perçoit</div><div class="persona-val">${a.p1_percoit || ''}</div>
-      <div class="persona-verdict">${a.p1_verdict || ''}</div>
-    </div>
+  const diagItem = (text, color) => text ? `
+    <tr>
+      <td style="padding:4px 0 4px 12px;border-left:2px solid ${color};margin-bottom:6px;">
+        <div style="font-size:12.5px;color:${color === TEAL ? '#0F6E56' : '#993C1D'};line-height:1.55;">${text}</div>
+      </td>
+    </tr>` : '';
 
-    <div class="persona">
-      <div><span class="persona-badge bv">Voulu</span></div>
-      <div class="persona-name">${a.p2_nom || ''}</div>
-      <div class="persona-label">Qui</div><div class="persona-val">${a.p2_qui || ''}</div>
-      <div class="persona-label">Ce qu'il perçoit</div><div class="persona-val">${a.p2_percoit || ''}</div>
-      <div class="persona-verdict">${a.p2_verdict || ''}</div>
-    </div>
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 
-    <div class="persona">
-      <div><span class="persona-badge bp">Parasite</span></div>
-      <div class="persona-name">${a.p3_nom || ''}</div>
-      <div class="persona-label">Qui</div><div class="persona-val">${a.p3_qui || ''}</div>
-      <div class="persona-label">Ce qu'il perçoit</div><div class="persona-val">${a.p3_percoit || ''}</div>
-      <div class="persona-verdict">${a.p3_verdict || ''}</div>
-    </div>
+<table width="100%" cellspacing="0" cellpadding="0" style="background:#f0ede6;padding:24px 0;">
+<tr><td align="center">
+<table width="640" cellspacing="0" cellpadding="0" style="max-width:640px;width:100%;background:#fff;border-radius:10px;overflow:hidden;border:.5px solid #e8e4dc;">
 
-    <div class="persona">
-      <div><span class="persona-badge bs">Possible · à valider</span></div>
-      <div class="persona-name">${a.p4_nom || ''}</div>
-      <div class="persona-label">Qui</div><div class="persona-val">${a.p4_qui || ''}</div>
-      <div class="persona-label">Pourquoi il ne le voit pas</div><div class="persona-val">${a.p4_blocage || ''}</div>
-      <div class="persona-verdict">${a.p4_verdict || ''}</div>
-    </div>
+  <!-- TOPBAR -->
+  <tr>
+    <td style="background:${BLEU};padding:14px 32px;">
+      <span style="font-family:Georgia,serif;font-size:13px;color:${OR};letter-spacing:.14em;text-transform:uppercase;">Sherpact</span>
+      <span style="color:rgba(255,255,255,.25);margin:0 8px;">·</span>
+      <span style="font-size:11px;color:rgba(255,255,255,.35);letter-spacing:.06em;">Diagnostic LinkedIn</span>
+    </td>
+  </tr>
 
-    <div class="algo">
-      <div class="algo-title">Visibilité algorithmique</div>
-      ${[1,2,3,4].map(i => a[`algo_kw${i}`] ? `<div class="algo-item"><span class="algo-kw">${a[`algo_kw${i}`]}</span> — ${a[`algo_text${i}`] || ''}</div>` : '').join('')}
-      ${a.algo_note ? `<div class="algo-note">${a.algo_note}</div>` : ''}
-    </div>
-  </div>
+  <!-- DISCLAIMER -->
+  <tr>
+    <td style="padding:16px 32px 0;">
+      <table width="100%" cellspacing="0" cellpadding="0">
+        <tr>
+          <td style="background:#fff;border:1px solid #e8e4dc;border-left:4px solid ${OR};border-radius:0 6px 6px 0;padding:12px 16px;">
+            <div style="font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:${OR};margin-bottom:5px;">Première analyse — Générée par l'IA</div>
+            <div style="font-size:12.5px;color:${GRIS};line-height:1.7;">Ce diagnostic est produit automatiquement à partir des informations <strong style="color:#0f0f0f;">visibles publiquement</strong> sur votre profil LinkedIn. Pour qu'il soit complet et ancré dans votre réalité, un échange de 15 minutes avec Laurent suffit.</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
 
-  <!-- BLOC 2 : Ce que le profil vend -->
-  <div class="bloc">
-    <div class="bloc-title">Bloc 2 — Ce que le profil vend réellement</div>
+  <!-- HEADER PROFIL -->
+  <tr>
+    <td style="padding:24px 32px 20px;border-bottom:.5px solid #e8e4dc;">
+      <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:${GRIS};margin-bottom:8px;font-weight:500;">Diagnostic de profil · Recherche d'emploi</div>
+      <div style="font-family:Georgia,serif;font-size:22px;color:#0f0f0f;margin-bottom:4px;">${a.nom || ''}</div>
+      <div style="font-size:13px;color:${GRIS};margin-bottom:14px;">${a.titre || ''} · ${a.entreprise || ''} · ${a.localisation || ''}</div>
+      <div style="background:${BLANC};border-left:3px solid ${BLEU};padding:12px 16px;font-size:13.5px;color:#0f0f0f;line-height:1.75;border-radius:0 4px 4px 0;">${a.intro || ''}</div>
+    </td>
+  </tr>
 
-    <div class="sig-item">
-      <div class="sig-tag">Titre</div>
-      ${a.titre_citation ? `<div class="sig-quote">"${a.titre_citation}"</div>` : ''}
-      <div class="sig-read">${a.titre_analyse || ''}</div>
-      ${a.titre_chip ? `<span class="chip">${a.titre_chip}</span>` : ''}
-    </div>
+  <!-- BLOC 1 : PERSONAS -->
+  <tr>
+    <td style="padding:24px 32px;border-bottom:.5px solid #e8e4dc;">
+      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:${GRIS};margin-bottom:16px;font-weight:500;">Bloc 1 — Personas attirés par votre profil</div>
+      <table width="100%" cellspacing="0" cellpadding="0">
+        <tr>
+          ${personaCard('voulu', a.p1_nom||'', a.p1_qui||'', a.p1_percoit||'', a.p1_verdict||'', TEAL)}
+          ${personaCard('voulu', a.p2_nom||'', a.p2_qui||'', a.p2_percoit||'', a.p2_verdict||'', TEAL)}
+          ${personaCard('parasite', a.p3_nom||'', a.p3_qui||'', a.p3_percoit||'', a.p3_verdict||'', CORAL)}
+          ${personaCard('possible', a.p4_nom||'', a.p4_qui||'', a.p4_blocage||'', a.p4_verdict||'', '#B4B2A9')}
+        </tr>
+      </table>
 
-    <div class="sig-item">
-      <div class="sig-tag">About complet</div>
-      ${a.about_citation ? `<div class="sig-quote">"${a.about_citation}"</div>` : ''}
-      <div class="sig-read">${a.about_analyse || ''}</div>
-      ${a.about_chip1 ? `<span class="chip">${a.about_chip1}</span>` : ''}
-      ${a.about_chip2 ? `<span class="chip">${a.about_chip2}</span>` : ''}
-    </div>
+      <!-- ALGO -->
+      <table width="100%" cellspacing="0" cellpadding="0" style="margin-top:16px;background:${BLANC};border-radius:6px;padding:14px 16px;">
+        <tr><td>
+          <div style="font-size:11px;font-weight:500;color:#0f0f0f;margin-bottom:10px;">Visibilité algorithmique — ce que LinkedIn fait (et ne fait pas) pour vous</div>
+          <table width="100%" cellspacing="0" cellpadding="0">
+            ${algoItem(a.algo_kw1, a.algo_text1, true)}
+            ${algoItem(a.algo_kw2, a.algo_text2, true)}
+            ${algoItem(a.algo_kw3, a.algo_text3, false)}
+            ${algoItem(a.algo_kw4, a.algo_text4, false)}
+          </table>
+          ${a.algo_note ? `<div style="margin-top:10px;padding-top:10px;border-top:.5px solid #e8e4dc;font-size:12px;color:${GRIS};line-height:1.65;">${a.algo_note}</div>` : ''}
+        </td></tr>
+      </table>
+    </td>
+  </tr>
 
-    <div class="sig-item">
-      <div class="sig-tag">Expériences récentes</div>
-      <div class="sig-read">${a.exp_analyse || ''}</div>
-    </div>
+  <!-- PREMIER DIAGNOSTIC -->
+  <tr>
+    <td style="padding:24px 32px;border-bottom:.5px solid #e8e4dc;">
+      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:${GRIS};margin-bottom:16px;font-weight:500;">Premier diagnostic</div>
+      <table width="100%" cellspacing="0" cellpadding="0">
+        <tr>
+          <td width="50%" style="padding-right:10px;vertical-align:top;">
+            <div style="background:${TEAL_BG};border-radius:6px;padding:14px 16px;">
+              <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${TEAL_TEXT};margin-bottom:10px;">Ce que le profil fait</div>
+              <table width="100%" cellspacing="0" cellpadding="0">
+                ${diagItem(a.diag_positif_1, TEAL)}
+                ${diagItem(a.diag_positif_2, TEAL)}
+                ${diagItem(a.diag_positif_3, TEAL)}
+              </table>
+            </div>
+          </td>
+          <td width="50%" style="padding-left:10px;vertical-align:top;">
+            <div style="background:${CORAL_BG};border-radius:6px;padding:14px 16px;">
+              <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${CORAL_TEXT};margin-bottom:10px;">Ce que le profil ne fait pas</div>
+              <table width="100%" cellspacing="0" cellpadding="0">
+                ${diagItem(a.diag_negatif_1, CORAL)}
+                ${diagItem(a.diag_negatif_2, CORAL)}
+                ${diagItem(a.diag_negatif_3, CORAL)}
+              </table>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
 
-    <div class="sig-item">
-      <div class="sig-tag">Posts récents</div>
-      <div class="sig-read">${a.posts_analyse || ''}</div>
-    </div>
+  <!-- SIGNATURE LAURENT -->
+  <tr>
+    <td style="background:${BLEU};padding:28px 32px;">
+      <table width="100%" cellspacing="0" cellpadding="0">
+        <tr>
+          <td style="vertical-align:top;">
+            <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-family:Georgia,serif;font-size:15px;color:#fff;text-decoration:none;display:block;margin-bottom:3px;">Laurent Garnier ↗</a>
+            <a href="https://www.linkedin.com/in/laurentgarnier7/" style="font-size:11px;color:${OR};opacity:.8;text-decoration:none;display:block;margin-bottom:10px;">linkedin.com/in/laurentgarnier7</a>
+            <div style="font-size:12px;color:rgba(255,255,255,.5);line-height:1.7;max-width:480px;margin-bottom:14px;">Je vous aide à construire un projet solide, à maîtriser l'IA comme levier réel, et à traiter votre recherche comme une campagne — pas comme une attente. Chasseur de têtes pendant 20 ans, je vous donne les codes que les recruteurs ne partagent pas.</div>
+            <a href="https://calendly.com/laurent-sherpact/15-min-sherpact-laurent-garnier" style="display:inline-block;padding:10px 22px;border:1px solid ${OR};color:${OR};font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;border-radius:2px;">Réserver un échange de 15 min →</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
 
-    <div class="sig-item">
-      <div class="sig-tag">Bannière + photo</div>
-      <div class="sig-read">${a.banniere_analyse || ''}</div>
-    </div>
-  </div>
+  <!-- RGPD -->
+  <tr>
+    <td style="background:#f0ede6;padding:16px 32px;text-align:center;border-top:.5px solid #e8e4dc;">
+      <p style="font-size:11px;color:#999;line-height:1.8;margin:0;">Vos données sont utilisées uniquement pour produire ce diagnostic. Elles ne sont pas stockées durablement.<br>RGPD — droit d'accès et d'effacement : <a href="mailto:laurent@sherpact.fr" style="color:#888;">laurent@sherpact.fr</a></p>
+    </td>
+  </tr>
 
-  <!-- BLOC 3 : Ce que chaque persona retient -->
-  <div class="bloc">
-    <div class="bloc-title">Bloc 3 — Ce que chaque persona retient</div>
+</table>
+</td></tr>
+</table>
 
-    <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:16px">
-      <tr>
-        ${[1,2,3,4].map(i => `<td width="25%" style="padding:8px;vertical-align:top;background:#f9f9f9;border:1px solid #eee;border-radius:4px">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:600;margin-bottom:6px">${a[`p${i}_nom`] || ''}</div>
-          <div style="font-size:13px;color:#333;line-height:1.5">${a[`reco${i}`] || ''}</div>
-        </td>`).join('')}
-      </tr>
-    </table>
-
-    <div class="bloc-title" style="margin-top:16px">Premier diagnostic</div>
-    <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">
-      <tr>
-        <td width="50%" style="padding-right:12px;vertical-align:top">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#16a34a;font-weight:600;margin-bottom:8px">Ce que le profil fait</div>
-          ${[1,2,3].map(i => a[`diag_positif_${i}`] ? `<div style="font-size:13px;color:#333;line-height:1.6;padding:3px 0 3px 14px;border-left:2px solid #16a34a;margin-bottom:6px">${a[`diag_positif_${i}`]}</div>` : '').join('')}
-        </td>
-        <td width="50%" style="padding-left:12px;vertical-align:top">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#dc2626;font-weight:600;margin-bottom:8px">Ce que le profil ne fait pas</div>
-          ${[1,2,3].map(i => a[`diag_negatif_${i}`] ? `<div style="font-size:13px;color:#333;line-height:1.6;padding:3px 0 3px 14px;border-left:2px solid #dc2626;margin-bottom:6px">${a[`diag_negatif_${i}`]}</div>` : '').join('')}
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <div class="footer">
-    <p>Diagnostic pour <a href="${linkedin_url}">${linkedin_url}</a></p>
-  </div>
-
-</div></body></html>`;
+</body></html>`;
 }
