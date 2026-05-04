@@ -1,3 +1,122 @@
+const { getStore } = require('@netlify/blobs');
+
+exports.handler = async (event) => {
+  if (event.httpMethod !== 'POST') return;
+
+  try {
+    const { linkedin_url, email, jobId } = JSON.parse(event.body);
+    if (!jobId) throw new Error('Missing jobId');
+
+    const rapidResp = await fetch(
+      `https://fresh-linkedin-profile-data.p.rapidapi.com/enrich-lead?linkedin_url=${encodeURIComponent(linkedin_url)}&include_skills=false&include_certifications=false&include_profile_status=false&include_company_public_url=false`,
+      {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+          'X-RapidAPI-Host': 'fresh-linkedin-profile-data.p.rapidapi.com'
+        }
+      }
+    );
+
+    if (!rapidResp.ok) throw new Error(`RapidAPI: ${rapidResp.status}`);
+    const rapidData = await rapidResp.json();
+    const p = rapidData.data || {};
+
+    const profileText = [
+      `Nom: ${p.full_name || ''}`,
+      `Titre: ${p.headline || ''}`,
+      `Poste: ${p.job_title || ''}`,
+      `Entreprise: ${p.company || ''}`,
+      `Localisation: ${p.hq_city || ''}, ${p.country || ''}`,
+      `Abonnés: ${p.follower_count || ''}`,
+      `École: ${p.school || ''}`,
+      `Secteur: ${p.company_industry || ''}`,
+      `Taille entreprise: ${p.company_employee_range || ''}`,
+      `About: ${(p.about || '').replace(/[\n\r\t]/g, ' ').substring(0, 1500)}`
+    ].join('\n');
+
+    const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 4000,
+        messages: [{
+          role: 'user',
+          content: `Tu es un expert en personal branding LinkedIn et en lecture de signaux implicites. Tu analyses les profils comme un recruteur senior qui scanne en 8 secondes — mais aussi comme un stratège qui lit entre les lignes.
+
+Analyse ce profil LinkedIn en mode recherche d'emploi avec un ton direct, bienveillant, vouvoiement détendu. Reponds UNIQUEMENT avec un JSON brut valide, sans backticks ni markdown.
+
+RÈGLES ABSOLUES pour les personas :
+- P1 et P2 sont toujours des personas "voulu" — des interlocuteurs que le profil attire intentionnellement
+- Les chasseurs de têtes et recruteurs exec sont TOUJOURS classés en P1 ou P2 (jamais ailleurs) — ce sont les interlocuteurs naturels d'un candidat en recherche
+- P3 est un persona "peu_pertinent" — quelqu'un que le profil attire involontairement et qui n'a aucune valeur pour la recherche d'emploi (ex: pair du secteur, consultant, étudiant, curieux)
+- P4 est un persona "possible" — un décideur ou recruteur réel que le profil POURRAIT attirer mais ne cible pas encore. Ce doit être une VRAIE PERSONNE avec un poste concret (ex: "DG d'une PME industrielle", "Head of HR chez un fonds PE"). JAMAIS l'algorithme LinkedIn, jamais un concept abstrait, jamais un outil
+- Ne jamais mentionner "Open to Work", "disponibilité", "mode recherche active" dans les analyses — parle uniquement de ce que le profil communique ou ne communique pas sur la valeur professionnelle
+- Pour le "premier diagnostic", parle de ce que le profil fait ou ne fait pas pour convaincre un recruteur — pas de ce qu'il "signale" en termes de recherche
+
+Profil LinkedIn:
+${profileText}
+
+JSON à remplir (TOUS les champs, analyses précises et concrètes, jamais de champs vides):
+{"nom":"","titre":"","entreprise":"","localisation":"","intro":"","p1_nom":"","p1_qui":"","p1_percoit":"","p1_verdict":"","p2_nom":"","p2_qui":"","p2_percoit":"","p2_verdict":"","p3_nom":"","p3_qui":"","p3_percoit":"","p3_verdict":"","p4_nom":"","p4_qui":"","p4_blocage":"","p4_verdict":"","algo_kw1":"","algo_text1":"","algo_kw2":"","algo_text2":"","algo_kw3":"","algo_text3":"","algo_kw4":"","algo_text4":"","algo_note":"","titre_citation":"","titre_analyse":"","titre_chip":"","about_citation":"","about_analyse":"","about_chip1":"","about_chip2":"","exp_analyse":"","posts_analyse":"","banniere_analyse":"","reco1":"","reco2":"","reco3":"","reco4":"","diag_positif_1":"","diag_positif_2":"","diag_positif_3":"","diag_negatif_1":"","diag_negatif_2":"","diag_negatif_3":""}`
+        }]
+      })
+    });
+
+    if (!claudeResp.ok) throw new Error(`Claude: ${claudeResp.status}`);
+    const claudeData = await claudeResp.json();
+    let raw = claudeData.content[0].text.trim()
+      .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    const a = JSON.parse(raw);
+
+    await Promise.all([
+      sendResend(email, a, linkedin_url),
+      sendNotification(email, a, linkedin_url)
+    ]);
+
+  } catch (err) {
+    console.error('analyze-background error:', err);
+  }
+};
+async function sendResend(email, a, linkedin_url) {
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM || 'Sherpact <diagnostic@sherpact.com>',
+      to: email,
+      subject: `Votre diagnostic LinkedIn — ${a.nom || 'Résultats'}`,
+      html: buildEmailHtml(a, linkedin_url)
+    })
+  });
+  if (!resp.ok) console.error('Resend error:', resp.status, await resp.text());
+}
+
+async function sendNotification(email, a, linkedin_url) {
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM || 'Sherpact <diagnostic@sherpact.com>',
+      to: 'laurent@sherpact.com',
+      subject: `Nouveau diagnostic — ${email}`,
+      html: `<p style="font-family:sans-serif;font-size:14px;color:#333;"><strong>Nouveau diagnostic soumis</strong><br>Email : ${email}<br>Profil : <a href="${linkedin_url}">${linkedin_url}</a><br>Date : ${new Date().toLocaleString('fr-FR')}</p><hr style="border:none;border-top:1px solid #e8e4dc;margin:20px 0">${buildEmailHtml(a, linkedin_url)}`
+    })
+  });
+  if (!resp.ok) console.error('Resend notification error:', resp.status, await resp.text());
+}
 function buildEmailHtml(a, linkedin_url) {
 
   const BLEU = '#1a2840';
