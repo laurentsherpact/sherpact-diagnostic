@@ -231,6 +231,15 @@ input::placeholder{color:#bbb;}
   <p id="confirmEmail" style="font-weight:600;color:#5b3fdf;margin:0;font-size:16px;"></p>
 </div>
 
+<!-- SECTION DÉJÀ ANALYSÉ -->
+<div id="blockedSection" style="display:none;min-height:calc(100vh - 48px);align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;padding:32px;">
+  <div id="blockedIcon" style="font-size:48px;">&#128274;</div>
+  <h2 id="blockedTitle" style="margin:0;font-size:22px;font-weight:600;font-family:'Libre Baskerville',serif;">Diagnostic déjà effectué</h2>
+  <p id="blockedMessage" style="color:#666;max-width:380px;line-height:1.6;margin:0;">Un diagnostic a déjà été réalisé pour l'adresse</p>
+  <p id="blockedEmail" style="font-weight:600;color:var(--bleu);margin:0;font-size:16px;"></p>
+  <p id="blockedSub" style="color:#666;max-width:380px;line-height:1.6;margin:0;">Consultez votre boîte email. Pour toute question, contactez <a href="mailto:laurent@sherpact.com" style="color:var(--bleu);font-weight:500;">laurent@sherpact.com</a>.</p>
+</div>
+
 <!-- SECTION RÉSULTATS -->
 <div id="resultsSection" style="display:none;">
   <div class="res-topbar">
@@ -425,10 +434,37 @@ async function handleSubmit() {
   if (!url || !url.includes('linkedin.com/in/')) { showToast('Veuillez entrer une URL LinkedIn valide.'); return; }
 
   document.getElementById('submitBtn').disabled = true;
-  document.getElementById('formSection').style.display = 'none';
-  document.getElementById('loadingSection').style.display = 'flex';
 
   try {
+    const checkResp = await fetch('/.netlify/functions/check-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const checkData = await checkResp.json();
+
+    if (!checkData.allowed) {
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('blockedEmail').textContent = email;
+      if (checkData.reason === 'in_progress') {
+        document.getElementById('blockedIcon').textContent = '⏳';
+        document.getElementById('blockedTitle').textContent = 'Analyse en cours…';
+        document.getElementById('blockedMessage').textContent = 'Une analyse est déjà en cours pour l\'adresse';
+        document.getElementById('blockedSub').textContent = 'Patientez quelques minutes, le diagnostic vous sera envoyé par email.';
+      } else {
+        document.getElementById('blockedIcon').innerHTML = '&#128274;';
+        document.getElementById('blockedTitle').textContent = 'Diagnostic déjà effectué';
+        document.getElementById('blockedMessage').textContent = 'Un diagnostic a déjà été réalisé pour l\'adresse';
+        document.getElementById('blockedSub').innerHTML = 'Consultez votre boîte email. Pour toute question, contactez <a href="mailto:laurent@sherpact.com" style="color:var(--bleu);font-weight:500;">laurent@sherpact.com</a>.';
+      }
+      document.getElementById('formSection').style.display = 'none';
+      document.getElementById('blockedSection').style.display = 'flex';
+      return;
+    }
+
+    document.getElementById('formSection').style.display = 'none';
+    document.getElementById('loadingSection').style.display = 'flex';
+
     const jobId = crypto.randomUUID();
 
     const resp = await fetch('/.netlify/functions/analyze-background', {

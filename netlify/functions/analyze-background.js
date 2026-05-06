@@ -3,9 +3,26 @@ const { getStore } = require('@netlify/blobs');
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return;
 
+  const { linkedin_url, email, jobId } = JSON.parse(event.body || '{}');
+  if (!jobId || !email) return;
+
+  const store = getStore({ name: 'email-counters', siteID: process.env.SITE_ID, token: process.env.NETLIFY_TOKEN });
+  const key = email.toLowerCase().trim();
+
+  let entry = null;
   try {
-    const { linkedin_url, email, jobId } = JSON.parse(event.body);
-    if (!jobId) throw new Error('Missing jobId');
+    const raw = await store.get(key);
+    entry = raw ? JSON.parse(raw) : null;
+    if (entry?.state === 'in_progress' || (entry?.count || 0) >= 2) return;
+
+    await store.set(key, JSON.stringify({ state: 'in_progress', count: 0 }));
+
+    if (email.toLowerCase().trim() === 'thomas.servais@servais-consulting.com') {
+      console.log('[mock] email de test détecté, faux délai de 30s');
+      await new Promise(resolve => setTimeout(resolve, 30_000));
+      await store.set(key, JSON.stringify({ state: 'done', count: (entry?.count || 0) + 1 }));
+      return;
+    }
 
     const rapidResp = await fetch(
       `https://fresh-linkedin-profile-data.p.rapidapi.com/enrich-lead?linkedin_url=${encodeURIComponent(linkedin_url)}&include_skills=false&include_certifications=false&include_profile_status=false&include_company_public_url=false`,
@@ -70,18 +87,21 @@ JSON à remplir (TOUS les champs, analyses précises et concrètes, jamais de ch
 
     if (!claudeResp.ok) throw new Error(`Claude: ${claudeResp.status}`);
     const claudeData = await claudeResp.json();
-    let raw = claudeData.content[0].text.trim()
+    const claudeText = claudeData.content[0].text.trim()
       .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    const a = JSON.parse(raw);
+    const a = JSON.parse(claudeText);
 
     await Promise.all([
       sendResend(email, a, linkedin_url),
       sendNotification(email, a, linkedin_url)
     ]);
 
+    await store.set(key, JSON.stringify({ state: 'done', count: (entry?.count || 0) + 1 }));
+
   } catch (err) {
     console.error('analyze-background error:', err);
+    try { await store.set(key, JSON.stringify({ state: 'done', count: entry?.count || 0 })); } catch (_) {}
   }
 };
 async function sendResend(email, a, linkedin_url) {
